@@ -1,0 +1,277 @@
+/* 
+1: EMPLOYEE SALES PERFORMANCE DATA
+I used a CTE to calculate the total sales that each employee achieves;
+in a separate query, I then rank the employees based on their sales rank.
+This data can be used by management to reward top employees while devising
+methods to support those that are underperforming.
+*/
+	
+	WITH
+	employee_sales AS (
+	    SELECT e.employee_id, e.first_name, e.last_name, 
+	           ROUND(SUM(od.quantity * od.unit_price)::numeric, 2) AS total_sales
+	      FROM employees AS e
+	      JOIN orders AS o
+	        ON o.employee_id = e.employee_id
+	      JOIN order_details AS od
+	        ON od.order_id = o.order_id
+	     GROUP BY e.employee_id
+	)
+	
+	SELECT employee_id, first_name || ' ' || last_name AS full_name, total_sales,
+	       RANK() OVER(ORDER BY total_sales DESC) AS rank
+	  FROM employee_sales;
+
+
+/* Output:
+employee_id	full_name		total_sales	rank
+4		Margaret Peacock	250187.45	1
+3		Janet Leverling		213051.3	2
+1		Nancy Davolio		202143.71	3
+2		Andrew Fuller		177749.26	4
+7		Robert King		141295.99	5
+8		Laura Callahan		133301.03	6
+9		Anne Dodsworth		82964		7
+6		Michael Suyama		78198.1		8
+5		Steven Buchanan		75567.75	9
+*/
+
+
+/* 
+2: MONTHLY SALES RUNNING TOTAL
+This code uses a CTE to determine the monthly sales of the business.
+The running total of sales is then calculated with the aggregate
+window function, giving valuable information on how the company's 
+total sales increase month over month.
+*/
+	
+	WITH
+	monthly_sales AS (
+	    SELECT EXTRACT(month FROM o.order_date) AS month,
+	           ROUND(SUM(od.unit_price * od.quantity)::numeric, 2) AS total_sale
+	      FROM order_details AS od
+	      JOIN orders AS o
+	        ON od.order_id = o.order_id
+	     GROUP BY EXTRACT(month FROM o.order_date)
+	)
+	
+	SELECT month, total_sale,
+	       ROUND(SUM(total_sale) OVER(ORDER BY month)::numeric, 2) AS running_total
+	  FROM monthly_sales
+	 ORDER BY month;
+
+
+/* Output:
+month	total_sale	running_total
+1	167547.52	167547.52
+2	145769.15	313316.67
+3	149805.35	463122.02
+4	190329.95	653451.97
+5	76722.36	730174.33
+6	39088		769262.33
+7	85657.03	854919.36
+8	76591.09	931510.45
+9	87369.02	1018879.47
+10	111532.1	1130411.57
+11	95617.36	1226028.93
+12	128429.66	1354458.59
+*/
+
+
+/*
+3: SALES GROWTH MONTH-OVER-MONTH 
+I used two CTEs to determine the total sales of each month in the year,
+comparing the month-over-month growth rate of sales with the window offset
+function LAG(). This data can be used to show which periods in the business
+are slow and which are fast for sales, which is useful for long-term strategy.
+*/
+
+	WITH
+	monthly_sales AS (
+	    SELECT EXTRACT(YEAR FROM o.order_date) AS year,
+	           EXTRACT(MONTH FROM o.order_date) AS month,
+	           ROUND(SUM(od.unit_price * od.quantity)::numeric, 2) AS total_sale
+	      FROM order_details AS od
+	      JOIN orders AS o
+	        ON od.order_id = o.order_id
+	     GROUP BY EXTRACT(YEAR FROM o.order_date), EXTRACT(MONTH FROM o.order_date)
+	),
+	lag_sales AS (
+	    SELECT year, month, total_sale,
+	           LAG(total_sale) OVER(ORDER BY year, month) AS prev_month
+	      FROM monthly_sales
+	)
+	    
+	SELECT year, month, ROUND(((total_sale - prev_month) * 100 / prev_month), 2) || '%' AS growth
+	  FROM lag_sales
+	 LIMIT 13;
+
+
+/* Output:
+year	month	growth
+1996	7
+1996	8	-11.87%
+1996	9	3.86%
+1996	10	49.09%
+1996	11	20.63%
+1996	12	2.51%
+1997	1	30.89%
+1997	2	-38.21%
+1997	3	-2.98%
+1997	4	39.32%
+1997	5	2.02%
+1997	6	-31.21%
+1997	7	41.90%
+*/
+
+
+/*
+4: HIGH-VALUE CUSTOMERS
+I identify the high-value customers that bring in above average sales
+with their orders as determined using CASE and the AVG() window function.
+This information can be used by the company to reward the best customers, 
+thus reinforcing loyalty and generating more sales.
+*/
+
+	WITH
+	customer_order_value AS (
+	    SELECT c.customer_id, o.order_id,
+	           ROUND(SUM(od.quantity * od.unit_price)::numeric, 2) AS value
+	      FROM customers AS c
+	      JOIN orders AS o
+	        ON c.customer_id = o.customer_id
+	      JOIN order_details AS od
+	        ON o.order_id = od.order_id
+	     GROUP BY c.customer_id, o.order_id
+	)
+	
+	SELECT customer_id, order_id, value,
+	       CASE
+	       WHEN value > AVG(value) OVER() THEN 'Above Average'
+	       WHEN value = AVG(value) OVER() THEN 'Average'
+	       ELSE 'Below Average'
+	       END AS order_value
+	  FROM customer_order_value
+	 ORDER BY order_value
+	 LIMIT 10;
+
+
+/* Output:
+customer_id	order_id	value	   order_value
+SAVEA		10757		3082	   Above Average
+MAGAA		10784		1650	   Above Average
+QUICK		10962		3584	   Above Average
+ERNSH		10633		6483.05	   Above Average
+OLDWO		10680		1682.5	   Above Average
+HANAR		10981		15810	   Above Average
+PICCO		10747		1912.85	   Above Average
+FRANR		10971		1733.06	   Above Average
+PICCO		11053		3658.75	   Above Average
+HUNGO		10701		3370	   Above Average
+*/
+
+
+/*
+5: SALES PERCENTAGE BY CATEGORY
+This category analysis examines which sales categories make up the
+biggest percentage of the company's overall sales using a CTE and 
+aggregate window function. The result, which finds the categories
+'Beverages', 'Dairy Products', 'Meat/Poultry, and 'Confections'
+being the largest drivers of sales is important for inventory
+optimization and decision-making.
+*/
+
+	WITH
+	sales_by_category AS (
+	    SELECT c.category_id, c.category_name,
+	           ROUND(SUM(od.unit_price * od.quantity)::numeric, 2) AS total_category_sales
+	      FROM categories AS c
+	      JOIN products AS p
+	        ON c.category_id = p.category_id
+	      JOIN order_details AS od
+	        ON p.product_id = od.product_id
+	     GROUP BY c.category_id
+	     ORDER BY category_id, category_name
+	)
+	
+	SELECT category_id, category_name, total_category_sales,
+	       ROUND(total_category_sales / SUM(total_category_sales) OVER() * 100, 2)
+	       || '%' AS percentage
+	  FROM sales_by_category
+	 GROUP BY category_id, category_name, total_category_sales;
+
+
+/* Output:
+category_id	category_name	total_category_sales	percentage
+1		Beverages	286526.95		21.15%
+2		Condiments	113694.75		8.39%
+3		Confections	177099.1		13.08%
+4		Dairy Products	251330.5		18.56%
+5		Grains/Cereals	100726.8		7.44%
+6		Meat/Poultry	178188.8		13.16%
+7		Produce		105268.6		7.77%
+8		Seafood		141623.09		10.46%
+*/
+
+
+/*
+6: TOP PRODUCTS BY CATEGORY
+The purpose of this query is to calculate the top 3 best-performing products
+from each category. I do this by determining the top performing products overall
+as calculated by their total sales, then assigning products in each category a
+number with the ROW_NUMBER() ranking window function, and then filtering away
+those whose row number is greater than 3. The resulting list is useful for 
+management in busines decisions, such as determining which items in each category 
+are most in-demand and need the most restocking, the least marketing, etc.
+*/
+
+	WITH
+	product_sales AS (
+	    SELECT p.product_id, p.product_name, p.category_id, c.category_name,
+	           ROUND(SUM(od.quantity * od.unit_price)::numeric, 2) AS sales
+	      FROM products AS p
+	      JOIN order_details AS od
+	        ON p.product_id = od.product_id
+	      JOIN categories AS c
+	        ON p.category_id = c.category_id
+	     GROUP BY p.product_id, c.category_name
+	     ORDER BY sales DESC
+	)
+	
+	SELECT product_id, product_name, category_id, category_name, sales
+	  FROM (
+	       SELECT product_id, product_name, category_id, category_name, sales,
+	       ROW_NUMBER() OVER(PARTITION BY category_id
+	                         ORDER BY sales DESC) AS ranking
+	         FROM product_sales
+	       ) AS ranking_table
+	 WHERE ranking <= 3;
+
+
+/* Output:
+product_id	product_name			category_id	category_name	sales
+38		Côte de Blaye			1		Beverages	149984.2
+43		Ipoh Coffee			1		Beverages	25079.2
+2		Chang				1		Beverages	18559.2
+63		Vegie-spread			2		Condiments	17696.3
+61		Sirop d'érable			2		Condiments	16438.8
+65		Louisiana Fiery Hot Pepper 	2		Condiments	14607
+62		Tarte au sucre			3		Confections	49827.9
+20		Sir Rodney's Marmalade		3		Confections	23635.8
+26		Gumbär Gummibärchen		3		Confections	21534.9
+59		Raclette Courdavault		4		Dairy Products	76296
+60		Camembert Pierrot		4		Dairy Products	50286
+72		Mozzarella di Giovanni		4		Dairy Products	25738.8
+56		Gnocchi di nonna Alice		5		Grains/Cereals	45121.2
+64		Wimmers gute Semmelknödel	5		Grains/Cereals	23009
+42		Singaporean Hokkien Fried Mee	5		Grains/Cereals	9332.4
+29		Thüringer Rostbratwurst		6		Meat/Poultry	87736.4
+17		Alice Mutton			6		Meat/Poultry	35482.2
+53		Perth Pasties			6		Meat/Poultry	21510.2
+51		Manjimup Dried Apples		7		Produce		44742.6
+28		Rössle Sauerkraut		7		Produce		26865.6
+7		Uncle Bob's Orgaic Dried Pears	7		Produce		22464
+18		Carnarvon Tigers		8		Seafood		31987.5
+10		Ikura				8		Seafood		22140.2
+40		Boston Crab Meat		8		Seafood		19048.3
+*/
