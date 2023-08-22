@@ -1,0 +1,563 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "71980235",
+   "metadata": {},
+   "source": [
+    "# Sales Analysis For Northwind Traders' Operations\n",
+    "\n",
+    "Northwind Traders is a food distribution company. Its history of operations is tracked in its [database found here](https://github.com/pthom/northwind_psql/tree/master) and includes information relating to four key areas: employee performance, monthly and yearly sales data and growth, consumer purchasing behaviour, and product sales and categories.\n",
+    "\n",
+    "The purpose of this project is to analyze these key areas to help Northwind Traders' management make strong, data-backed decisions and answer the following questions:\n",
+    "\n",
+    "1. Which employees should be rewarded/provided support based on performance, and how can rankings promote healthy competition and better sales?\n",
+    "2. What are monthly and yearly sales growth trends?\n",
+    "3. How can the highest-spending and lowest-spending customers be identified to determine appropriate engagement incentives?\n",
+    "4. What are the top products and how can inventory for these be optimized?\n",
+    "    \n",
+    "After running the data analysis, I found the top performing employees by sales rank; Northwind Traders' running total of sales and month-over-month sales growth rate; engagement levels of customers' orders, ranked by percentile; and the highest performing categories, individual products within each category, and individual products overall. All tables summarizing this data will prove invaluable for Northwind Traders to optimize its operations and continue strong growth into the future with data-backed decisions and business strategies.\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "76a24f3b",
+   "metadata": {},
+   "source": [
+    "### Employee Sales Performance\n",
+    "\n",
+    "To answer the first question, I join the `employees` table with the `orders` and `order_details` tables to link each employee with their respective sales performance. I defined each employee's total sales as the sum of the revenue from all the orders they handle, and determined this first with an `employee_sales` Common Table Expression (CTE). This allowed me to then query the employees' data and rank them by their total sales."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "abe8bf08",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "WITH\n",
+    "employee_sales AS (\n",
+    "    SELECT e.employee_id, e.first_name, e.last_name, \n",
+    "           ROUND(SUM(od.quantity * od.unit_price)::numeric, 2) AS total_sales\n",
+    "      FROM employees AS e\n",
+    "      JOIN orders AS o\n",
+    "        ON o.employee_id = e.employee_id\n",
+    "      JOIN order_details AS od\n",
+    "        ON od.order_id = o.order_id\n",
+    "     GROUP BY e.employee_id\n",
+    ")\n",
+    "\n",
+    "SELECT employee_id, first_name || ' ' || last_name AS full_name, total_sales,\n",
+    "       RANK() OVER(ORDER BY total_sales DESC) AS rank\n",
+    "  FROM employee_sales;"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "51c913ab",
+   "metadata": {},
+   "source": [
+    "| employee_id | full_name | total_sales | rank |\n",
+    "|:--------:|:--------:|:--------:|:--------:|\n",
+    "| 4 | Margaret Peacock | 250187.45 | 1 |\n",
+    "| 3 | Janet Leverling | 213051.3 | 2 |\n",
+    "| 1 | Nancy Davolio | 202143.71 | 3 |\n",
+    "| 2 | Andrew Fuller | 177749.26 | 4 |\n",
+    "| 7 | Robert King | 141295.99 | 5 |\n",
+    "| 8 | Laura Callahan | 133301.03 | 6 |\n",
+    "| 9 | Anne Dodsworth | 82964 | 7 |\n",
+    "| 6 | Michael Suyama | 78198.1 | 8 |\n",
+    "| 5 | Steven Buchanan | 75567.75 | 9 |"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "0eb71e01",
+   "metadata": {},
+   "source": [
+    "The top three performing employees all average over 200,000 revenue in sales, while the bottom three employees average around 80,000. To help fix the large disparity, this data can be used by management to reward employees such as Margaret Peacock, Janet Leverling, and Nancy Davolio to foster a company culture of strong performance and engage the employees, while distributing additional resources and support to help employees like Anne Dodsworth, Michael Suyama, and Steven Buchanan significantly improve their sales over time.\n",
+    "\n",
+    "Overall, the ranking above provides management valuable data to promote healthy competition within the company to ultimately boost sales and help employees develop."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "ef83b71a",
+   "metadata": {},
+   "source": [
+    "### Sales Trends: Running Total & Month-Over-Month Growth\n",
+    "\n",
+    "The employees' sales performances provide a snapshot of individual contribution, but examining Northwind Traders' macro sales trends will provide more valuable data on sales growth rates. I begin by querying a table for sales by month and keeping a running total of monthly sales over time with an aggregate window function."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "8e8a517f",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "WITH\n",
+    "monthly_sales AS (\n",
+    "    SELECT EXTRACT(month FROM o.order_date) AS month,\n",
+    "           ROUND(SUM(od.unit_price * od.quantity)::numeric, 2) AS total_sale\n",
+    "      FROM order_details AS od\n",
+    "      JOIN orders AS o\n",
+    "        ON od.order_id = o.order_id\n",
+    "     GROUP BY EXTRACT(month FROM o.order_date)\n",
+    ")\n",
+    "\n",
+    "SELECT month, total_sale,\n",
+    "       ROUND(SUM(total_sale) OVER(ORDER BY month)::numeric, 2) AS running_total\n",
+    "  FROM monthly_sales\n",
+    " ORDER BY month;"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "4006d2da",
+   "metadata": {},
+   "source": [
+    "| month | total_sales | running_total |\n",
+    "|:--------:|:--------:|:--------:|\n",
+    "| 1 | 167547.52 | 167547.52\n",
+    "| 2 | 145769.15 | 313316.67\n",
+    "3 | 149805.35 | 463122.02\n",
+    "4 | 190329.95 | 653451.97\n",
+    "5 | 76722.36 | 730174.33\n",
+    "6 | 39088 | 769262.33\n",
+    "7 | 85657.03 | 854919.36\n",
+    "8 | 76591.09 | 931510.45\n",
+    "9 | 87369.02 | 1018879.47\n",
+    "10 | 111532.1 | 1130411.57\n",
+    "11 | 95617.36 | 1226028.93\n",
+    "12 | 128429.66 | 1354458.59\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "89c804c7",
+   "metadata": {},
+   "source": [
+    "The running total of sales by month shows the total sales each month but does not fully capture how sales have changed relative to the previous month. To generate this data, I can query a table displaying the month-over-month sales growth rate. This can be done with CTEs and the window offset function `LAG()` to query the previous month's sales and compare it with the current month's."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "5034abb6",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "WITH\n",
+    "monthly_sales AS (\n",
+    "    SELECT EXTRACT(YEAR FROM o.order_date) AS year,\n",
+    "           EXTRACT(MONTH FROM o.order_date) AS month,\n",
+    "           ROUND(SUM(od.unit_price * od.quantity)::numeric, 2) AS total_sale\n",
+    "      FROM order_details AS od\n",
+    "      JOIN orders AS o\n",
+    "        ON od.order_id = o.order_id\n",
+    "     GROUP BY EXTRACT(YEAR FROM o.order_date), EXTRACT(MONTH FROM o.order_date)\n",
+    "),\n",
+    "lag_sales AS (\n",
+    "    SELECT year, month, total_sale,\n",
+    "           LAG(total_sale) OVER(ORDER BY year, month) AS prev_month\n",
+    "      FROM monthly_sales\n",
+    ")\n",
+    "    \n",
+    "SELECT year, month, ROUND(((total_sale - prev_month) * 100 / prev_month), 2) || '%' AS growth\n",
+    "  FROM lag_sales\n",
+    " LIMIT 13;"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "0d0fdba0",
+   "metadata": {},
+   "source": [
+    "| year | month | growth |\n",
+    "|:--------:|:--------:|:--------:|\n",
+    "1997 | 7 |\n",
+    "1996 | 8 | -11.87%\n",
+    "1996 | 9 | 3.86%\n",
+    "1996 | 10 | 49.09%\n",
+    "1996 | 11 | 20.63%\n",
+    "1996 | 12 | 2.51%\n",
+    "1997 | 1 | 30.89%\n",
+    "1997 | 2 | -38.21%\n",
+    "1997 | 3 | -2.98%\n",
+    "1997 | 4 | 39.32%\n",
+    "1997 | 5 | 2.02%\n",
+    "1997 | 6 | -31.21%\n",
+    "1997 | 7 | 41.90%"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "5825bbde",
+   "metadata": {},
+   "source": [
+    "The month-over-month sales growth chart clearly outlines when total sales have increased or decreased relative to the preceding month: for example, the period from September 1996 to the new year saw immense sales growth before declining for two months after. Overall, Northwind Traders is on an upwards trajectory with extremely strong sales growth rates.\n",
+    "\n",
+    "The growth-rate data can be further analyzed by management for patterns relating to business decisions: for example, how does the introduction of a new marketing campaign or product affect sales growth? Both sales tables I queried provide value to better inform business decisions and judge the effectiveness of certain trialed strategies."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "ed1d20b1",
+   "metadata": {},
+   "source": [
+    "### Customer Engagement Analysis\n",
+    "\n",
+    "Northwind Traders' sales depend on customer behaviour and their engagement levels. As such, identifying which customers are high-engagers—that is, spend the most—and which ones are low-engagers will allow management to implement appropriate engagement incentives or rewards. Top customers may be drawn into a loyalty program to keep their engagement levels, while special promotions may be targeted towards lower-spending customers to retain them and ultimately increase sales.\n",
+    "\n",
+    "I can determine customer engagement by querying a table using `CASE` to tag customer orders as either \"Above Average\", \"Average\", or \"Below Average\":"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "207e2afc",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "WITH\n",
+    "customer_order_value AS (\n",
+    "    SELECT c.customer_id, o.order_id,\n",
+    "           ROUND(SUM(od.quantity * od.unit_price)::numeric, 2) AS value\n",
+    "      FROM customers AS c\n",
+    "      JOIN orders AS o\n",
+    "        ON c.customer_id = o.customer_id\n",
+    "      JOIN order_details AS od\n",
+    "        ON o.order_id = od.order_id\n",
+    "     GROUP BY c.customer_id, o.order_id\n",
+    ")\n",
+    "\n",
+    "SELECT customer_id, order_id, value,\n",
+    "       CASE\n",
+    "       WHEN value > AVG(value) OVER() THEN 'Above Average'\n",
+    "       WHEN value = AVG(value) OVER() THEN 'Average'\n",
+    "       ELSE 'Below Average'\n",
+    "       END AS order_value,\n",
+    "       ROUND(100 * PERCENT_RANK() OVER (ORDER BY value)::numeric, 2) || 'th' AS percentile\n",
+    "  FROM customer_order_value\n",
+    " ORDER BY value DESC;"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "6113c8b3",
+   "metadata": {},
+   "source": [
+    "| customer_id | order_id | value | order_value | percentile |\n",
+    "|:--------:|:--------:|:--------:|:--------:|:--------:|\n",
+    "QUICK | 10865 | 17250 | Above Average | 100.00th\n",
+    "SAVEA | 11030 | 16321.9 | Above Average | 99.88th\n",
+    "HANAR | 10981 | 15810 | Above Average | 99.76th\n",
+    "QUEEN | 10372 | 12281.2 | Above Average | 99.64th\n",
+    "MEREP | 10424 | 11493.2 | Above Average | 99.52th\n",
+    "KOENE | 10817 | 11490.7 | Above Average | 99.40th\n",
+    "RATTC | 10889 | 11380 | Above Average | 99.28th\n",
+    "SIMOB | 10417 | 11283.2 | Above Average | 99.16th\n",
+    "HUNGO | 10897 | 10835.24 | Above Average | 99.03th\n",
+    "PICCO | 10353 | 10741.6 | Above Average | 98.91th\n",
+    "QUICK | 10515 | 10588.5 | Above Average | 98.79th\n",
+    "RATTC | 10479 | 10495.6 | Above Average | 98.67th\n",
+    "QUICK | 10540 | 10191.7 | Above Average | 98.55th\n",
+    "QUICK | 10691 | 10164.8 | Above Average | 98.43th\n",
+    "WHITC | 11032 | 8902.5 | Above Average | 98.31th\n",
+    "   ...   |  ...     |   ...    |      ...        | ...\n",
+    "MAGAA | 10754 | 55.2 | Below Average | 1.69th\n",
+    "SPECD | 10738 | 52.35 | Below Average | 1.57th\n",
+    "FRANS | 10422 | 49.8 | Below Average | 1.45th\n",
+    "SPLIR | 10271 | 48 | Below Average | 1.33th\n",
+    "WELLI | 10900 | 45 | Below Average | 0.84th\n",
+    "ISLAT | 10674 | 45 | Below Average | 0.84th\n",
+    "NORTS | 11057 | 45 | Below Average | 0.84th\n",
+    "LAMAI | 11051 | 45 | Below Average | 0.84th\n",
+    "SAVEA | 10815 | 40 | Below Average | 0.72th\n",
+    "LONEP | 10883 | 36 | Below Average | 0.60th\n",
+    "OCEAN | 10898 | 30 | Below Average | 0.48th\n",
+    "REGGC | 10586 | 28 | Below Average | 0.24th\n",
+    "SUPRD | 10767 | 28 | Below Average | 0.24th\n",
+    "FRANS | 10807 | 18.4 | Below Average | 0.12th\n",
+    "CACTU | 10782 | 12.5 | Below Average | 0.00th"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "f1ecafc0",
+   "metadata": {},
+   "source": [
+    "The table indicates customer orders based on a general categorization of how they compare to the order average. Moreover, I queried each customer order's percentile, which will be useful should Northwind Traders require more specific ranking information regaring how much value each customer brings in relative to other customers. For example, using the percentile ranking will allow Northwind Traders to target a rewards program to all customers with orders above the 90th percentile and a marketing offer campaign to customers within the lower 50th percentile to encourage engagement."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "51134e1e",
+   "metadata": {},
+   "source": [
+    "### Product and Category Analysis\n",
+    "\n",
+    "Building off the customer analysis in the previous section, it is equally important to consider which products and product categories are the biggest drivers of Northwind Traders' sales and revenue. Data showing the most popular products and sales compositions within each category will allow the company to optimize its operations. Such can be accomplished by streamlining inventory to meet demand and deciding methods of boosting currently sub-optimal product categories. Product and category analysis data will also allow for decisions to be made regarding what new product and category offerings are most likely to be successful.\n",
+    "\n",
+    "I begin by querying the percentage of total sales that each product category takes up. Using a CTE to calculate sales by category and aggregate window funtions, I can determine the sales categories that make up the biggest percentage of the company's overall sales.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b852c2b8",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "WITH\n",
+    "sales_by_category AS (\n",
+    "    SELECT c.category_id, c.category_name,\n",
+    "           ROUND(SUM(od.unit_price * od.quantity)::numeric, 2) AS total_category_sales\n",
+    "      FROM categories AS c\n",
+    "      JOIN products AS p\n",
+    "        ON c.category_id = p.category_id\n",
+    "      JOIN order_details AS od\n",
+    "        ON p.product_id = od.product_id\n",
+    "     GROUP BY c.category_id\n",
+    "     ORDER BY category_id, category_name\n",
+    ")\n",
+    "\n",
+    "SELECT category_id, category_name, total_category_sales,\n",
+    "       ROUND(total_category_sales / SUM(total_category_sales) OVER() * 100, 2)\n",
+    "       || '%' AS percentage\n",
+    "  FROM sales_by_category\n",
+    " GROUP BY category_id, category_name, total_category_sales;\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "6123073c",
+   "metadata": {},
+   "source": [
+    "category_id | category_name | total_category_sales | percentage\n",
+    "|:--------:|:--------:|:--------:|:--------:|\n",
+    "1 | Beverages | 286526.95 | 21.15%\n",
+    "2 | Condiments | 113694.75 | 8.39%\n",
+    "3 | Confections | 177099.1 | 13.08%\n",
+    "4 | Dairy Products | 251330.5 | 18.56%\n",
+    "5 | Grains/Cereals | 100726.8 | 7.44%\n",
+    "6 | Meat/Poultry | 178188.8 | 13.16%\n",
+    "7 | Produce | 105268.6 | 7.77%\n",
+    "8 | Seafood | 141623.09 | 10.46%\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "fa616958",
+   "metadata": {},
+   "source": [
+    "The largest contributing categories to sales are `Beverages`, `Dairy Products`, and `Meat/Poultry`, collectively accounting for over 50% of all sales. \n",
+    "\n",
+    "It is important for Northwind Traders to always closely monitor products in these categories to ensure that they are available in stock to meet demand. To answer what specific products in each category are most popular, I can assign each product a rank with the `ROW_NUMBER()` window function and filter out everything except the top three most popular products from each category."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "7a6f5e7f",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "WITH\n",
+    "product_sales AS (\n",
+    "    SELECT p.product_id, p.product_name, p.category_id, c.category_name,\n",
+    "           ROUND(SUM(od.quantity * od.unit_price)::numeric, 2) AS sales\n",
+    "      FROM products AS p\n",
+    "      JOIN order_details AS od\n",
+    "        ON p.product_id = od.product_id\n",
+    "      JOIN categories AS c\n",
+    "        ON p.category_id = c.category_id\n",
+    "     GROUP BY p.product_id, c.category_name\n",
+    "     ORDER BY sales DESC\n",
+    ")\n",
+    "\n",
+    "SELECT product_id, product_name, category_id, category_name, sales, ranking AS category_rank\n",
+    "  FROM (\n",
+    "       SELECT product_id, product_name, category_id, category_name, sales,\n",
+    "       ROW_NUMBER() OVER(PARTITION BY category_id\n",
+    "                         ORDER BY sales DESC) AS ranking\n",
+    "         FROM product_sales\n",
+    "       ) AS ranking_table\n",
+    " WHERE ranking <= 3;\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "0257e761",
+   "metadata": {},
+   "source": [
+    "| product_id | product_name | category_id | category_name | sales | category_rank |\n",
+    "|:--------:|:--------:|:--------:|:--------:|:--------:|:--------:|\n",
+    "38 | Côte de Blaye | 1 | Beverages | 149984.2 | 1\n",
+    "43 | Ipoh Coffee | 1 | Beverages | 25079.2 | 2 \n",
+    "2 | Chang | 1 | Beverages | 18559.2 | 3\n",
+    "63 | Vegie-spread | 2 | Condiments | 17696.3 | 1 \n",
+    "61 | Sirop d'érable | 2 | Condiments | 16438.8 | 2\n",
+    "65 | Louisiana Fiery Hot Pepper Sauce | 2 | Condiments | 14607 | 3\n",
+    "62 | Tarte au sucre | 3 | Confections | 49827.9 | 1 \n",
+    "20 | Sir Rodney's Marmalade | 3 | Confections | 23635.8 | 2\n",
+    "26 | Gumbär Gummibärchen | 3 | Confections | 21534.9 | 3\n",
+    "59 | Raclette Courdavault | 4 | Dairy Products | 76296 | 1\n",
+    "60 | Camembert Pierrot | 4 | Dairy Products | 50286 | 2\n",
+    "72 | Mozzarella di Giovanni | 4 | Dairy Products | 25738.8 | 3\n",
+    "56 | Gnocchi di nonna Alice | 5 | Grains/Cereals | 45121.2 | 1\n",
+    "64 | Wimmers gute Semmelknödel | 5 | Grains/Cereals | 23009 | 2\n",
+    "42 | Singaporean Hokkien Fried Mee | 5 | Grains/Cereals | 9332.4 | 3\n",
+    "29 | Thüringer Rostbratwurst | 6 | Meat/Poultry | 87736.4 | 1\n",
+    "17 | Alice Mutton | 6 | Meat/Poultry | 35482.2 | 2\n",
+    "53 | Perth Pasties | 6 | Meat/Poultry | 21510.2 | 3\n",
+    "51 | Manjimup Dried Apples | 7 | Produce | 44742.6 | 1\n",
+    "28 | Rössle Sauerkraut | 7 | Produce | 26865.6 | 2\n",
+    "7 | Uncle Bob's Organic Dried Pears | 7 | Produce | 22464 | 3\n",
+    "18 | Carnarvon Tigers | 8 | Seafood | 31987.5 | 1\n",
+    "10 | Ikura | 8 | Seafood | 22140.2 | 2\n",
+    "40 | Boston Crab Meat | 8 | Seafood | 19048.3 | 3\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "040ff7c3",
+   "metadata": {},
+   "source": [
+    "The top three most popular products in each category provide management data on what type of products are essential to a category's performance and how inventory should be optimized for these high-demand products. However, what are the most popular products overall? I can answer this question by tabulating the total sales for all products across all categories and assigning each a percentile ranking, providing even more specific data on individual product performance.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "8b67dfeb",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "WITH\n",
+    "product_sales AS (\n",
+    "    SELECT p.product_id, p.product_name, p.category_id, c.category_name,\n",
+    "           ROUND(SUM(od.quantity * od.unit_price)::numeric, 2) AS sales\n",
+    "      FROM products AS p\n",
+    "      JOIN order_details AS od\n",
+    "        ON p.product_id = od.product_id\n",
+    "      JOIN categories AS c\n",
+    "        ON p.category_id = c.category_id\n",
+    "     GROUP BY p.product_id, c.category_name\n",
+    "     ORDER BY sales DESC\n",
+    ")\n",
+    "\n",
+    "SELECT product_id, product_name, category_id, category_name, sales,\n",
+    "       ROUND(100 * PERCENT_RANK() OVER(ORDER BY sales)::numeric, 2) || 'th' AS percentile\n",
+    "  FROM (\n",
+    "       SELECT product_id, product_name, category_id, category_name, sales\n",
+    "         FROM product_sales\n",
+    "        ) AS ranking_table\n",
+    "  ORDER BY sales DESC;"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "4c3e8e0a",
+   "metadata": {},
+   "source": [
+    "product_id | product_name | category_id | category_name | sales | percentile\n",
+    "|:--------:|:--------:|:--------:|:--------:|:--------:|:--------:|\n",
+    "38 | Côte de Blaye | 1 | Beverages | 149984.2 | 100.00th\n",
+    "29 | Thüringer Rostbratwurst | 6 | Meat/Poultry | 87736.4 | 98.68th\n",
+    "59 | Raclette Courdavault | 4 | Dairy Products | 76296 | 97.37th\n",
+    "60 | Camembert Pierrot | 4 | Dairy Products | 50286 | 96.05th\n",
+    "62 | Tarte au sucre | 3 | Confections | 49827.9 | 94.74th\n",
+    "56 | Gnocchi di nonna Alice | 5 | Grains/Cereals | 45121.2 | 93.42th\n",
+    "51 | Manjimup Dried Apples | 7 | Produce | 44742.6 | 92.11th\n",
+    "17 | Alice Mutton | 6 | Meat/Poultry | 35482.2 | 90.79th\n",
+    "18 | Carnarvon Tigers | 8 | Seafood | 31987.5 | 89.47th\n",
+    "28 | Rössle Sauerkraut | 7 | Produce | 26865.6 | 88.16th\n",
+    "72 | Mozzarella di Giovanni | 4 | Dairy Products | 25738.8 | 86.84th\n",
+    "43 | Ipoh Coffee | 1 | Beverages | 25079.2 | 85.53th\n",
+    "69 | Gudbrandsdalsost | 4 | Dairy Products | 24307.2 | 84.21th\n",
+    "20 | Sir Rodney's Marmalade | 3 | Confections | 23635.8 | 82.89th\n",
+    "64 | Wimmers gute Semmelknödel | 5 | Grains/Cereals | 23009 | 81.58th\n",
+    "7 | Uncle Bob's Organic Dried Pears | 7 | Produce | 22464 | 80.26th\n",
+    "10 | Ikura | 8 | Seafood | 22140.2 | 78.95th\n",
+    "26 | Gumbär Gummibärchen | 3 | Confections | 21534.9 | 77.63th\n",
+    "53 | Perth Pasties | 6 | Meat/Poultry | 21510.2 | 76.32th\n",
+    "... | ... | ... | ... | ... | ...\n",
+    "5 | Chef Anton's Gumbo Mix | 2 | Condiments | 5801.15 | 23.68th\n",
+    "13 | Konbu | 8 | Seafood | 5234.4 | 22.37th\n",
+    "54 | Tourtière | 6 | Meat/Poultry | 5121 | 21.05th\n",
+    "23 | Tunnbröd | 5 | Grains/Cereals | 4840.2 | 19.74th\n",
+    "24 | Guaraná Fantástica | 1 | Beverages | 4782.6 | 18.42th\n",
+    "45 | Rogede sild | 8 | Seafood | 4740.5 | 17.11th\n",
+    "47 | Zaanse koeken | 3 | Confections | 4358.6 | 15.79th\n",
+    "73 | Röd Kaviar | 8 | Seafood | 4200 | 14.47th\n",
+    "25 | NuNuCa Nuß-Nougat-Creme | 3 | Confections | 4051.6 | 13.16th\n",
+    "66 | Louisiana Hot Spiced Okra | 2 | Condiments | 3519 | 11.84th\n",
+    "50 | Valkoinen suklaa | 3 | Confections | 3510 | 10.53th\n",
+    "52 | Filo Mix | 5 | Grains/Cereals | 3383.8 | 9.21th\n",
+    "3 | Aniseed Syrup | 2 | Condiments | 3080 | 7.89th\n",
+    "37 | Gravad lax | 8 | Seafood | 3047.2 | 6.58th\n",
+    "74 | Longlife Tofu | 7 | Produce | 2566 | 5.26th\n",
+    "67 | Laughing Lumberjack Lager | 1 | Beverages | 2562 | 3.95th\n",
+    "15 | Genen Shouyu | 2 | Condiments | 1813.5 | 2.63th\n",
+    "33 | Geitost | 4 | Dairy Products | 1713.5 | 1.32th\n",
+    "48 | Chocolade | 3 | Confections | 1542.75 | 0.00th"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "1947cbe9",
+   "metadata": {},
+   "source": [
+    "The most popular products that Northwind Traders sells are listed above. This table provides a more macro view of product performance rather than limiting them to just their categories. Using the percentile ranking, the company will also be able to quantitively identify strong and poor performers. This will allow for constant re-stocking for the top percentile products, and initiatives such as discounts on the bottom 20th percentile products to sell them out before their expiration dates."
+   ]
+  },
+  {
+   "attachments": {},
+   "cell_type": "markdown",
+   "id": "88cc3041",
+   "metadata": {},
+   "source": [
+    "## Conclusion\n",
+    "\n",
+    "I answered the four questions posed at the beginning of the project to help Northwind Traders streamline its operations. I ranked employees by their sales performance to help management deduce ways of promoting healthy competition. I also took on a more macro view of sales performance by tabulating the running total of sales and month-by-month sales growth rate, allowing for easy identification of macro trends. I then ordered customers by percentile of their order contributions to sales, making it simple for management to engage, reward, and retain customers, and took a deep look at specific products and categories that perform the strongest to ensure their inventory optimization.\n",
+    "\n",
+    "Ultimately, all of the data will allow Northwind Traders to continue making strong, data-backed decisions for a long-term strategy that helps continues its history of growth."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "d138f512",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.4"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
